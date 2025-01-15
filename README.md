@@ -162,4 +162,169 @@ int main() {
 
 ```
 
-#
+## 原地不动
+
+无法检测到屏幕
+
+无法检测到激光点
+
+检测到两个及两个以上的激光点
+
+激光点的位置不在屏幕内
+
+## 识别屏幕
+
+### 神经网络
+
+yolov8
+
+[Pertical/YOLOv8: YOLOv8 🚀 in PyTorch &gt; ONNX &gt; CoreML &gt; TFLite](https://github.com/Pertical/YOLOv8)
+
+[YOLOv8 -Ultralytics YOLO 文档](https://docs.ultralytics.com/zh/models/yolov8/)
+
+### 计算机视觉
+
+灰度化
+
+高斯模糊
+
+均衡化
+
+二值化
+
+Canny边缘检测
+
+霍夫变换
+
+近似多边形
+
+```cpp
+void showFrameWithPause(cv::Mat& frame) {
+    // 检查是否成功获取了帧
+    if (frame.empty()) {
+        std::cerr << "Error: Could not capture frame!" << endl;
+        return;
+    }
+    // 显示视频帧
+    imshow("Frame", frame);
+    // 按键继续
+    waitKey();
+}
+void processFrame(cv::Mat& frame) {
+    // 检查是否成功获取了帧
+    if (frame.empty()) {
+        std::cerr << "Error: Could not capture frame!" << endl;
+        return;
+    }
+    // 转换为灰度图像
+    cv::Mat gray;
+    cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+    showFrameWithPause(gray);
+    // 高斯模糊
+    cv::Mat blurred;
+    cv::GaussianBlur(gray, blurred, cv::Size(5, 5), 0);
+    showFrameWithPause(blurred);
+    // 图像均衡化
+    cv::Mat equalized;
+    cv::equalizeHist(blurred, equalized);
+    showFrameWithPause(equalized);
+    // 二值化
+    cv::Mat binary;
+    cv::threshold(equalized, binary, 128, 255, cv::THRESH_BINARY);
+    showFrameWithPause(binary);
+    // 使用Canny边缘检测 弱边缘 强边缘
+    cv::Mat edges;
+    cv::Canny(binary, edges, 175, 200);
+    showFrameWithPause(edges);
+    // 使用霍夫变换检测直线
+    std::vector<cv::Vec2f> lines;
+    cv::HoughLines(edges, lines, 1, CV_PI / 180, 128);
+    // 绘制检测到的直线
+    for (size_t i = 0; i < lines.size(); i++) {
+        float rho = lines[i][0];
+        float theta = lines[i][1];
+        cv::Point pt1, pt2;
+        double cos_theta = cos(theta);
+        double sin_theta = sin(theta);
+        pt1.x = cvRound(rho * cos_theta + 64 * (-sin_theta));
+        pt1.y = cvRound(rho * sin_theta + 64 * (cos_theta));
+        pt2.x = cvRound(rho * cos_theta - 128 * (-sin_theta));
+        pt2.y = cvRound(rho * sin_theta - 128 * (cos_theta));
+        cv::line(edges, pt1, pt2, cv::Scalar(255, 255, 255), 2);
+    }
+    showFrameWithPause(edges);
+    // 找到轮廓
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(edges, contours, cv::RETR_EXTERNAL,
+                     cv::CHAIN_APPROX_SIMPLE);
+    // 筛选矩形轮廓（屏幕边界）
+    for (size_t i = 0; i < contours.size(); i++) {
+        // 近似多边形（四个角的矩形）
+        std::vector<cv::Point> approx;
+        cv::approxPolyDP(contours[i], approx,
+                         cv::arcLength(contours[i], true) * 0.02, true);
+        // 检查是否为矩形
+        if (approx.size() == 4 && cv::isContourConvex(approx)) {
+            // 获取矩形的四个角
+            double area = cv::contourArea(approx);
+            std::cout << "area: " << area << std::endl;
+            if (area > 4096) {  // 排除面积太小的轮廓
+                // 绘制矩形边界
+                cv::polylines(frame, approx, true, cv::Scalar(0, 255, 0), 3);
+                showFrameWithPause(frame);
+            }
+        }
+    }
+}
+```
+
+实测调优
+
+```cpp
+void processFrame(cv::Mat& frame) {
+    // 检查是否成功获取了帧
+    if (frame.empty()) {
+        std::cerr << "Error: Could not capture frame!" << endl;
+        return;
+    }
+    // 转换为灰度图像
+    cv::Mat gray;
+    cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+    // 图像均衡化
+    cv::Mat equalized;
+    cv::equalizeHist(gray, equalized);
+    // 二值化
+    cv::Mat binary;
+    cv::threshold(equalized, binary, 128, 255, cv::THRESH_BINARY);
+    // 使用Canny边缘检测 弱边缘 强边缘
+    cv::Mat edges;
+    cv::Canny(binary, edges, 175, 200);
+    // 找轮廓
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(edges, contours, cv::RETR_EXTERNAL,
+                     cv::CHAIN_APPROX_SIMPLE);
+    // 筛选矩形轮廓（屏幕边界）
+    for (size_t i = 0; i < contours.size(); i++) {
+        // 近似多边形（四个角的矩形）
+        std::vector<cv::Point> approx;
+        cv::approxPolyDP(contours[i], approx,
+                         cv::arcLength(contours[i], true) * 0.02, true);
+        // 检查是否为矩形
+        if (approx.size() == 4 && cv::isContourConvex(approx)) {
+            // 获取矩形的四个角
+            double area = cv::contourArea(approx);
+            std::cout << "area: " << area << std::endl;
+            if (area > 4096) {  // 排除面积太小的轮廓
+                // 绘制矩形边界
+                cv::polylines(frame, approx, true, cv::Scalar(0, 255, 0), 3);
+            }
+        }
+    }
+}
+```
+
+灰度化、均衡化、二值化、Canny边缘检测、近似多边形
+
+![1736938535499](image/README/1736938535499.gif)
+
+## 识别激光点
