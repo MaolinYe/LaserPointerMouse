@@ -293,33 +293,33 @@ void processFrame(cv::Mat& frame) {
     // 图像均衡化
     cv::Mat equalized;
     cv::equalizeHist(gray, equalized);
-    // 二值化
-    cv::Mat binary;
-    cv::threshold(equalized, binary, 128, 255, cv::THRESH_BINARY);
     // 使用Canny边缘检测 弱边缘 强边缘
     cv::Mat edges;
-    cv::Canny(binary, edges, 175, 200);
+    cv::Canny(equalized, edges, 128, 256);
+    // imshow("Frame", edges);
     // 找轮廓
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(edges, contours, cv::RETR_EXTERNAL,
                      cv::CHAIN_APPROX_SIMPLE);
     // 筛选矩形轮廓（屏幕边界）
+    std::cout << "Area: " << std::endl;
     for (size_t i = 0; i < contours.size(); i++) {
         // 近似多边形（四个角的矩形）
         std::vector<cv::Point> approx;
         cv::approxPolyDP(contours[i], approx,
-                         cv::arcLength(contours[i], true) * 0.02, true);
+                         cv::arcLength(contours[i], true) * 0.01, true);
         // 检查是否为矩形
         if (approx.size() == 4 && cv::isContourConvex(approx)) {
             // 获取矩形的四个角
             double area = cv::contourArea(approx);
-            std::cout << "area: " << area << std::endl;
-            if (area > 4096) {  // 排除面积太小的轮廓
-                // 绘制矩形边界
+            std::cout << area << ' ';
+            if (area > 8192) {  // 排除面积太小的轮廓
+                // 找到屏幕 绘制矩形边界
                 cv::polylines(frame, approx, true, cv::Scalar(0, 255, 0), 3);
             }
         }
     }
+    std::cout << std::endl;
 }
 ```
 

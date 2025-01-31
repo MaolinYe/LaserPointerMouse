@@ -20,6 +20,37 @@ void showFrameWithPause(cv::Mat& frame) {
     // 按键继续
     waitKey();
 }
+void findLaserPoint(cv::Mat& frame) {
+    // 转换到HSV颜色空间
+    cv::Mat hsv;
+    cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);
+    // 设置红色的HSV范围
+    cv::Scalar lower_red1(0, 120, 70);     // 红色下界1
+    cv::Scalar upper_red1(10, 255, 255);   // 红色上界1
+    cv::Scalar lower_red2(170, 120, 70);   // 红色下界2
+    cv::Scalar upper_red2(180, 255, 255);  // 红色上界2
+    // 提取红色区域
+    cv::Mat mask1, mask2, mask;
+    cv::inRange(hsv, lower_red1, upper_red1, mask1);
+    cv::inRange(hsv, lower_red2, upper_red2, mask2);
+    mask = mask1 | mask2;  // 合并两个范围的红色区域
+    // 进行形态学操作来去除噪点（可选）
+    cv::Mat kernel =
+        cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
+    cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, kernel);
+    // 查找红色区域的轮廓
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(mask, contours, cv::RETR_EXTERNAL,
+                     cv::CHAIN_APPROX_SIMPLE);
+    // 在图像中标出轮廓
+    for (size_t i = 0; i < contours.size(); i++) {
+        cv::Moments mu = cv::moments(contours[i]);
+        cv::Point2f center(mu.m10 / mu.m00, mu.m01 / mu.m00);
+        // 在激光点位置绘制圆圈
+        cv::circle(frame, center, 10, cv::Scalar(0, 255, 0), 2);
+        std::cout << "Laser Point detected at: " << center << std::endl;
+    }
+}
 void processFrame(cv::Mat& frame) {
     // 检查是否成功获取了帧
     if (frame.empty()) {
@@ -32,33 +63,37 @@ void processFrame(cv::Mat& frame) {
     // 图像均衡化
     cv::Mat equalized;
     cv::equalizeHist(gray, equalized);
-    // 二值化
-    cv::Mat binary;
-    cv::threshold(equalized, binary, 128, 255, cv::THRESH_BINARY);
     // 使用Canny边缘检测 弱边缘 强边缘
     cv::Mat edges;
-    cv::Canny(binary, edges, 175, 200);
+    cv::Canny(equalized, edges, 128, 256);
+    // imshow("Frame", edges);
     // 找轮廓
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(edges, contours, cv::RETR_EXTERNAL,
                      cv::CHAIN_APPROX_SIMPLE);
     // 筛选矩形轮廓（屏幕边界）
+    std::cout << "Area: " << std::endl;
     for (size_t i = 0; i < contours.size(); i++) {
         // 近似多边形（四个角的矩形）
         std::vector<cv::Point> approx;
         cv::approxPolyDP(contours[i], approx,
-                         cv::arcLength(contours[i], true) * 0.02, true);
+                         cv::arcLength(contours[i], true) * 0.01, true);
         // 检查是否为矩形
         if (approx.size() == 4 && cv::isContourConvex(approx)) {
             // 获取矩形的四个角
             double area = cv::contourArea(approx);
-            std::cout << "area: " << area << std::endl;
-            if (area > 4096) {  // 排除面积太小的轮廓
-                // 绘制矩形边界
+            std::cout << area << ' ';
+            if (area > 8192) {  // 排除面积太小的轮廓
+                // 找到屏幕 绘制矩形边界
                 cv::polylines(frame, approx, true, cv::Scalar(0, 255, 0), 3);
+                std::cout << std::endl << "Rectangle coordinates:";
+                for (auto& point : approx) {
+                    std::cout << point << ' ';
+                }
             }
         }
     }
+    std::cout << std::endl;
 }
 int main() {
     int screenWidth = GetSystemMetrics(SM_CXSCREEN);   // 获取屏幕宽度
@@ -90,9 +125,14 @@ int main() {
             break;
         }
         // 帧处理
-        processFrame(frame);
+        // processFrame(frame);
+        findLaserPoint(frame);
         // 显示视频帧
         imshow("Video Frame", frame);
+        // 按下 'q' 键退出
+        if (waitKey(1) == 'q') {
+            break;
+        }
         ++frame_count;
         // 每 秒计算一次显示帧率
         auto current_time = chrono::high_resolution_clock::now();
@@ -102,10 +142,6 @@ int main() {
             cout << "Display FPS: " << display_fps << endl;
             frame_count = 0;            // 重置帧计数器
             start_time = current_time;  // 重置时间
-        }
-        // 按下 'q' 键退出
-        if (waitKey(1) == 'q') {
-            break;
         }
     }
     // 释放摄像头
