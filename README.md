@@ -307,13 +307,13 @@ void processFrame(cv::Mat& frame) {
         // 近似多边形（四个角的矩形）
         std::vector<cv::Point> approx;
         cv::approxPolyDP(contours[i], approx,
-                         cv::arcLength(contours[i], true) * 0.01, true);
+                         cv::arcLength(contours[i], true) * 0.02, true);
         // 检查是否为矩形
         if (approx.size() == 4 && cv::isContourConvex(approx)) {
             // 获取矩形的四个角
             double area = cv::contourArea(approx);
             std::cout << area << ' ';
-            if (area > 8192) {  // 排除面积太小的轮廓
+            if (area > 2<<14) {  // 排除面积太小的轮廓
                 // 找到屏幕 绘制矩形边界
                 cv::polylines(frame, approx, true, cv::Scalar(0, 255, 0), 3);
             }
@@ -323,8 +323,16 @@ void processFrame(cv::Mat& frame) {
 }
 ```
 
-灰度化、均衡化、二值化、Canny边缘检测、近似多边形
+灰度化、均衡化、Canny边缘检测、近似多边形
 
 ![1736938535499](image/README/1736938535499.gif)
 
 ## 识别激光点
+
+## 适用环境
+
+光线均匀
+
+## 影响因素
+
+光线、摄像头位置

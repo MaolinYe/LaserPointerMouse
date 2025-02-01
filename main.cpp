@@ -77,19 +77,20 @@ void processFrame(cv::Mat& frame) {
         // 近似多边形（四个角的矩形）
         std::vector<cv::Point> approx;
         cv::approxPolyDP(contours[i], approx,
-                         cv::arcLength(contours[i], true) * 0.01, true);
+                         cv::arcLength(contours[i], true) * 0.02, true);
         // 检查是否为矩形
         if (approx.size() == 4 && cv::isContourConvex(approx)) {
             // 获取矩形的四个角
             double area = cv::contourArea(approx);
             std::cout << area << ' ';
-            if (area > 8192) {  // 排除面积太小的轮廓
+            if (area > 2<<14) {  // 排除面积太小的轮廓
                 // 找到屏幕 绘制矩形边界
                 cv::polylines(frame, approx, true, cv::Scalar(0, 255, 0), 3);
                 std::cout << std::endl << "Rectangle coordinates:";
                 for (auto& point : approx) {
                     std::cout << point << ' ';
                 }
+                std::cout << "\nAera: ";
             }
         }
     }
@@ -125,8 +126,8 @@ int main() {
             break;
         }
         // 帧处理
-        // processFrame(frame);
-        findLaserPoint(frame);
+        processFrame(frame);
+        // findLaserPoint(frame);
         // 显示视频帧
         imshow("Video Frame", frame);
         // 按下 'q' 键退出
