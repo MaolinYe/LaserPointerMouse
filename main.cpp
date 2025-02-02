@@ -4,11 +4,13 @@
 #include <opencv2/opencv.hpp>
 using namespace cv;
 using namespace std;
+
 void moveMouse(int x, int y) {
     SetCursorPos(x, y);
     std::cout << "mouse GPS" << std::endl;
     std::cout << "x: " << x << " y: " << y << std::endl;
 }
+
 void showFrameWithPause(cv::Mat& frame) {
     // 检查是否成功获取了帧
     if (frame.empty()) {
@@ -20,37 +22,58 @@ void showFrameWithPause(cv::Mat& frame) {
     // 按键继续
     waitKey();
 }
+
 void findLaserPoint(cv::Mat& frame) {
-    // 转换到HSV颜色空间
-    cv::Mat hsv;
-    cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);
-    // 设置红色的HSV范围
-    cv::Scalar lower_red1(0, 120, 70);     // 红色下界1
-    cv::Scalar upper_red1(10, 255, 255);   // 红色上界1
-    cv::Scalar lower_red2(170, 120, 70);   // 红色下界2
-    cv::Scalar upper_red2(180, 255, 255);  // 红色上界2
-    // 提取红色区域
-    cv::Mat mask1, mask2, mask;
-    cv::inRange(hsv, lower_red1, upper_red1, mask1);
-    cv::inRange(hsv, lower_red2, upper_red2, mask2);
-    mask = mask1 | mask2;  // 合并两个范围的红色区域
-    // 进行形态学操作来去除噪点（可选）
-    cv::Mat kernel =
-        cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
-    cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, kernel);
-    // 查找红色区域的轮廓
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(mask, contours, cv::RETR_EXTERNAL,
-                     cv::CHAIN_APPROX_SIMPLE);
-    // 在图像中标出轮廓
-    for (size_t i = 0; i < contours.size(); i++) {
-        cv::Moments mu = cv::moments(contours[i]);
-        cv::Point2f center(mu.m10 / mu.m00, mu.m01 / mu.m00);
-        // 在激光点位置绘制圆圈
-        cv::circle(frame, center, 10, cv::Scalar(0, 255, 0), 2);
-        std::cout << "Laser Point detected at: " << center << std::endl;
+    // 检查是否成功获取了帧
+    if (frame.empty()) {
+        std::cerr << "Error: Could not capture frame!" << endl;
+        return;
+    }
+    // 转换为HSV颜色空间
+    Mat hsv;
+    cvtColor(frame, hsv, COLOR_BGR2HSV);
+    // 定义红色范围的HSV阈值（需根据实际情况调整）
+    Scalar lower_red1(0, 120, 70);  // 低色调范围
+    Scalar upper_red1(10, 255, 255);
+    Scalar lower_red2(170, 120, 70);  // 高色调范围
+    Scalar upper_red2(180, 255, 255);
+    // 创建颜色掩膜
+    Mat mask1, mask2, mask;
+    inRange(hsv, lower_red1, upper_red1, mask1);
+    inRange(hsv, lower_red2, upper_red2, mask2);
+    mask = mask1 | mask2;
+    // 查找轮廓
+    vector<vector<Point>> contours;
+    findContours(mask, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+    Point laserCenter(-1, -1);
+    // 遍历所有轮廓
+    std::cout << std::endl;
+    for (const auto& contour : contours) {
+        double area = contourArea(contour);
+        std::cout << "Area: " << area << ' ';
+        if (area < 16 || area > 128)  // 忽略太小太大的区域
+            continue;
+        // 形状验证：计算最小外接圆
+        Point2f center;
+        float radius;
+        minEnclosingCircle(contour, center, radius);
+        // 计算轮廓占圆面积的比例（验证圆形度）
+        double circleArea = CV_PI * radius * radius;
+        double ratio = area / circleArea;
+        std::cout << "Ratio: " << ratio << ' ';
+        if (ratio > 0.5) {
+            Moments m = moments(contour);
+            laserCenter = Point(m.m10 / m.m00, m.m01 / m.m00);
+        }
+    }
+    std::cout << std::endl;
+    // 显示结果
+    if (laserCenter.x != -1) {
+        circle(frame, laserCenter, 5, Scalar(0, 255, 0), 2);
+        cout << "Laser Point detected at: " << laserCenter << endl;
     }
 }
+
 void processFrame(cv::Mat& frame) {
     // 检查是否成功获取了帧
     if (frame.empty()) {
@@ -83,7 +106,9 @@ void processFrame(cv::Mat& frame) {
             // 获取矩形的四个角
             double area = cv::contourArea(approx);
             std::cout << area << ' ';
-            if (area > 2<<14) {  // 排除面积太小的轮廓
+            double maxArea = 2 << 14;
+            if (area > maxArea) {  // 排除面积太小的轮廓
+                maxArea = area;
                 // 找到屏幕 绘制矩形边界
                 cv::polylines(frame, approx, true, cv::Scalar(0, 255, 0), 3);
                 std::cout << std::endl << "Rectangle coordinates:";
@@ -96,6 +121,7 @@ void processFrame(cv::Mat& frame) {
     }
     std::cout << std::endl;
 }
+
 int main() {
     int screenWidth = GetSystemMetrics(SM_CXSCREEN);   // 获取屏幕宽度
     int screenHeight = GetSystemMetrics(SM_CYSCREEN);  // 获取屏幕高度
@@ -126,8 +152,8 @@ int main() {
             break;
         }
         // 帧处理
-        processFrame(frame);
-        // findLaserPoint(frame);
+        // processFrame(frame);
+        findLaserPoint(frame);
         // 显示视频帧
         imshow("Video Frame", frame);
         // 按下 'q' 键退出
