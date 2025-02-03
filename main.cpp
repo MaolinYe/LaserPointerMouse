@@ -32,10 +32,10 @@ void findLaserPoint(cv::Mat& frame) {
     // 转换为HSV颜色空间
     Mat hsv;
     cvtColor(frame, hsv, COLOR_BGR2HSV);
-    // 定义红色范围的HSV阈值（需根据实际情况调整）
-    Scalar lower_red1(0, 120, 70);  // 低色调范围
-    Scalar upper_red1(10, 255, 255);
-    Scalar lower_red2(170, 120, 70);  // 高色调范围
+    // 定义暗红色和高亮的HSV阈值
+    Scalar lower_red1(0, 128, 64);  // 低色调范围
+    Scalar upper_red1(20, 255, 255);
+    Scalar lower_red2(160, 128, 64);  // 高色调范围
     Scalar upper_red2(180, 255, 255);
     // 创建颜色掩膜
     Mat mask1, mask2, mask;
@@ -51,7 +51,7 @@ void findLaserPoint(cv::Mat& frame) {
     for (const auto& contour : contours) {
         double area = contourArea(contour);
         std::cout << "Area: " << area << ' ';
-        if (area < 16 || area > 128)  // 忽略太小太大的区域
+        if (area < 8 || area > 1024)  // 忽略太小太大的区域
             continue;
         // 形状验证：计算最小外接圆
         Point2f center;
