@@ -42,8 +42,7 @@ class LaserPointMouse {
     }
 
     bool inside(cv::Point& point, std::vector<cv::Point>& polygon) {
-        return true;
-        //return cv::pointPolygonTest(polygon, point, false);
+        return cv::pointPolygonTest(polygon, point, false);
     }
 
     bool findLaserPoint(cv::Mat& frame) {
@@ -55,29 +54,38 @@ class LaserPointMouse {
         // 转换为HSV颜色空间
         Mat hsv;
         cvtColor(frame, hsv, COLOR_BGR2HSV);
+        // 分离 HSV 通道
+        std::vector<cv::Mat> hsv_channels;
+        cv::split(hsv, hsv_channels);
+        // 对 V (亮度) 通道进行直方图均衡化
+        cv::Mat v_eq;
+        cv::equalizeHist(hsv_channels[2], v_eq);
+        // 合并通道
+        hsv_channels[2] = v_eq;
+        cv::merge(hsv_channels, hsv);
         // 定义暗红色和高亮的HSV阈值
-        Scalar lower_red1(0, 32, 32);  // 低色调范围
+        Scalar lower_red1(0, 128, 192);  // 低色调范围
         Scalar upper_red1(20, 255, 255);
-        Scalar lower_red2(160, 32, 32);  // 高色调范围
+        Scalar lower_red2(160, 128, 192);  // 高色调范围
         Scalar upper_red2(180, 255, 255);
         // 创建颜色掩膜
         Mat mask1, mask2, mask;
         inRange(hsv, lower_red1, upper_red1, mask1);
         inRange(hsv, lower_red2, upper_red2, mask2);
         mask = mask1 | mask2;
-        // 查找轮廓
+        // imshow("debug", mask);
+        //  查找轮廓
         vector<vector<Point>> contours;
         findContours(mask, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
         this->laserPoint = {-1, -1};
         // 遍历所有轮廓
         std::cout << std::endl;
-        double minArea = 8;
+        double minRatio = 0.6;
         for (const auto& contour : contours) {
             double area = contourArea(contour);
             std::cout << "Area: " << area << ' ';
-            if (area < minArea || area > 1024)  // 忽略太小太大的区域
+            if (area < 8 || area > 64)  // 忽略太小太大的区域
                 continue;
-            minArea = area;
             // 形状验证：计算最小外接圆
             Point2f center;
             float radius;
@@ -86,9 +94,13 @@ class LaserPointMouse {
             double circleArea = CV_PI * radius * radius;
             double ratio = area / circleArea;
             std::cout << "Ratio: " << ratio << ' ';
-            if (ratio > 0.5) {
+            if (ratio > minRatio) {
+                minRatio = ratio;
                 Moments m = moments(contour);
-                this->laserPoint = {m.m10 / m.m00, m.m01 / m.m00};
+                this->laserPoint = {int(m.m10 / m.m00), int(m.m01 / m.m00)};
+                std::cout << std::endl
+                          << "possible one -> Area: " << area
+                          << " Ratio: " << ratio << std::endl;
             }
         }
         std::cout << std::endl;
@@ -103,7 +115,6 @@ class LaserPointMouse {
     }
 
     bool findScreenEdge(cv::Mat& frame) {
-        return true;
         // 检查是否成功获取了帧
         if (frame.empty()) {
             std::cerr << "Error: Could not capture frame!" << endl;
