@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <opencv2/opencv.hpp>
@@ -33,10 +34,10 @@ class LaserPointMouse {
 
     void coordinateTransform() {
         // 计算透视变换矩阵
-        cv::Mat H = cv::findHomography(this->originPoints, this->screenPoints);
+        cv::Mat H = cv::findHomography(this->screenPoints, this->originPoints);
         // 使用透视变换来获取激光点在屏幕上的坐标
-        std::vector<cv::Point> laser_point_screen(1);
-        cv::perspectiveTransform(std::vector<cv::Point>{this->laserPoint},
+        std::vector<cv::Point2f> laser_point_screen(1);
+        cv::perspectiveTransform(std::vector<cv::Point2f>{this->laserPoint},
                                  laser_point_screen, H);
         this->laserScreenPoint = laser_point_screen[0];
     }
@@ -126,13 +127,20 @@ class LaserPointMouse {
         // 图像均衡化
         cv::Mat equalized;
         cv::equalizeHist(gray, equalized);
+        // 高斯模糊
+        cv::Mat blurred;
+        for (int i = 0; i < 8; ++i) {
+            cv::GaussianBlur(equalized, blurred, cv::Size(3, 3), 0);
+            // cv::equalizeHist(blurred, equalized);
+            equalized = blurred;
+        }
         // 使用Canny边缘检测 弱边缘 强边缘
         cv::Mat edges;
-        cv::Canny(equalized, edges, 128, 256);
+        cv::Canny(equalized, edges, 32, 64);
         // imshow("Frame", edges);
         // 找轮廓
         std::vector<std::vector<cv::Point>> contours;
-        cv::findContours(edges, contours, cv::RETR_EXTERNAL,
+        cv::findContours(edges, contours, cv::RETR_LIST,
                          cv::CHAIN_APPROX_SIMPLE);
         // 筛选矩形轮廓（屏幕边界）
         this->screenPoints.clear();
@@ -141,7 +149,7 @@ class LaserPointMouse {
             // 近似多边形（四个角的矩形）
             std::vector<cv::Point> approx;
             cv::approxPolyDP(contours[i], approx,
-                             cv::arcLength(contours[i], true) * 0.015, true);
+                             cv::arcLength(contours[i], true) * 0.02, true);
             // 检查是否为矩形
             if (approx.size() == 4 && cv::isContourConvex(approx)) {
                 // 获取矩形的四个角
@@ -151,6 +159,14 @@ class LaserPointMouse {
                 if (area > maxArea) {  // 排除面积太小的轮廓
                     maxArea = area;
                     std::cout << std::endl << "Rectangle coordinates:";
+                    std::sort(approx.begin(), approx.end(),
+                              [](const cv::Point& a, const cv::Point& b) {
+                                  if (abs(a.x - b.x) < 2 << 5) {
+                                      return a.y < b.y;
+                                  }
+                                  return a.x < b.x;
+                              });
+                    std::swap(approx[2], approx[3]);
                     for (auto& point : approx) {
                         std::cout << point << ' ';
                     }
@@ -177,8 +193,8 @@ class LaserPointMouse {
         std::cout << "Screen Height: " << screenHeight << std::endl;
         // 原始坐标
         std::vector<cv::Point> originPoints{
-            cv::Point(0, 0), cv::Point(0, screenWidth),
-            cv::Point(screenHeight, 0), cv::Point(screenHeight, screenWidth)};
+            cv::Point(0, 0), cv::Point(0, screenHeight),
+            cv::Point(screenWidth, screenHeight), cv::Point(screenWidth, 0)};
         this->originPoints = move(originPoints);
     }
     void work() {
@@ -208,11 +224,11 @@ class LaserPointMouse {
             }
             // 帧处理
             if (findScreenEdge(frame) && findLaserPoint(frame)) {
-                // coordinateTransform();
-                // moveMouse(this->laserScreenPoint);
+                coordinateTransform();
+                moveMouse(this->laserScreenPoint);
             }
             // 显示视频帧
-            imshow("Video Frame", frame);
+            imshow("LaserPointMouse", frame);
             // 按下 'q' 键退出
             if (waitKey(1) == 'q') {
                 break;
